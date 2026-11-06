@@ -56,6 +56,12 @@ struct fm_tuner_ops
 	const char *name;       /* "mtk", "iris" */
 	const char *path;       /* the driver's node */
 	int open_flags;
+	/*
+	 * module-droid-fm's arguments for the audio HAL that comes with this
+	 * receiver (NULL: none). Qualcomm's HALs take FM with set_parameters,
+	 * not as an audio patch.
+	 */
+	const char *audio_args;
 
 	/* Before the node is opened (NULL: nothing to do). */
 	void (*before_open)(struct fm_tuner *t);

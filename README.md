@@ -16,8 +16,9 @@ the one whose driver node exists (`fm_tuner_detect`):
 Sound goes through PulseAudio: while the radio is on, `fmradiod` keeps
 `module-droid-fm` (pulseaudio-modules-droid) loaded, which patches the chip's
 output to the audio HAL's speaker or headphones. The wired headphones are the
-antenna. Only the MindPhone's build has that module so far; elsewhere the
-status has an `audioError`.
+antenna. On IRIS the module is loaded with `mode=parameters`: Qualcomm's audio
+HALs take FM through `set_parameters` (`handle_fm`, `fm_volume`), not as an
+audio patch. Where the module is missing the status has an `audioError`.
 
 A device with neither node still runs the service; `getStatus` then says
 `available: false`, and a client shows no FM.

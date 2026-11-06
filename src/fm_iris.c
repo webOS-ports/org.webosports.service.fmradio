@@ -669,6 +669,7 @@ const struct fm_tuner_ops fm_iris_ops = {
 	.name = "iris",
 	.path = "/dev/radio0",
 	.open_flags = O_RDONLY,
+	.audio_args = "mode=parameters",
 	.before_open = iris_before_open,
 	.power_up = iris_power_up,
 	.power_down = iris_power_down,

@@ -608,6 +608,9 @@ static void test_ops(void)
 	g_assert_cmpstr(fm_iris_ops.path, ==, "/dev/radio0");
 	g_assert_cmpstr(fm_mtk_ops.path, ==, "/dev/fm");
 	g_assert_cmpstr(fm_iris_ops.name, ==, "iris");
+	/* Qualcomm's audio HAL takes FM through set_parameters; MediaTek's a patch. */
+	g_assert_cmpstr(fm_iris_ops.audio_args, ==, "mode=parameters");
+	g_assert_null(fm_mtk_ops.audio_args);
 
 	/* Both looked for, MediaTek first. */
 	g_assert_true(fm_tuner_backends[0] == &fm_mtk_ops);

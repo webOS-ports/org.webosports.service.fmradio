@@ -1058,7 +1058,11 @@ int main(int argc, char **argv)
 
 	jobs = g_async_queue_new();
 	worker = g_thread_new("fm-tuner", worker_main, NULL);
-	audio = fm_audio_new(FM_PULSE_SERVER, NULL, audio_changed, NULL);
+	{
+		const struct fm_tuner_ops *ops = fm_tuner_detect();
+
+		audio = fm_audio_new(FM_PULSE_SERVER, ops ? ops->audio_args : NULL, audio_changed, NULL);
+	}
 
 	poll_id = g_timeout_add(FM_SIGNAL_INTERVAL_MS, poll_signal, NULL);
 	term_id = g_unix_signal_add(SIGTERM, on_quit_signal, NULL);
