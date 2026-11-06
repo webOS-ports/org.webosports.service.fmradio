@@ -1,0 +1,8 @@
+{
+    "org.webosports.app.music": [
+        "fmradio.operation"
+    ],
+    "org.webosports.app.music-*": [
+        "fmradio.operation"
+    ]
+}

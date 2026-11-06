@@ -1,0 +1,10 @@
+{
+    "id": "org.webosports.service.fmradio",
+    "version": "1.0.0",
+    "roleFiles": ["@WEBOS_INSTALL_WEBOS_SYSBUSDIR@/roles.d/org.webosports.service.fmradio.role.json"],
+    "serviceFiles": ["@WEBOS_INSTALL_WEBOS_SYSBUSDIR@/services.d/org.webosports.service.fmradio.service"],
+    "apiPermissionFiles": ["@WEBOS_INSTALL_WEBOS_SYSBUSDIR@/api-permissions.d/org.webosports.service.fmradio.api.json"],
+    "clientPermissionFiles": ["@WEBOS_INSTALL_WEBOS_SYSBUSDIR@/client-permissions.d/org.webosports.service.fmradio-clients.perm.json",
+                              "@WEBOS_INSTALL_WEBOS_SYSBUSDIR@/client-permissions.d/org.webosports.service.fmradio.perm.json"],
+    "groupsFiles": ["@WEBOS_INSTALL_WEBOS_SYSBUSDIR@/groups.d/org.webosports.service.fmradio.groups.json"]
+}

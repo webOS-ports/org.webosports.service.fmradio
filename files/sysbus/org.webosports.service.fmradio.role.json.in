@@ -1,0 +1,13 @@
+{
+    "exeName": "@WEBOS_INSTALL_SBINDIR@/fmradiod",
+    "trustLevel": "oem",
+    "type": "regular",
+    "allowedNames": ["org.webosports.service.fmradio", ""],
+    "permissions": [
+        {
+            "service": "org.webosports.service.fmradio",
+            "inbound": ["*"],
+            "outbound": ["*"]
+        }
+    ]
+}

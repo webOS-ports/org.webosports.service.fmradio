@@ -1,0 +1,4 @@
+{
+    "allowedNames": ["org.webosports.service.fmradio"],
+    "fmradio.operation": ["dev"]
+}

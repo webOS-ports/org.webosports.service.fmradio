@@ -1,0 +1,19 @@
+[Unit]
+Description=LuneOS FM radio service
+# The registration made with the hub cannot outlive it, and nothing in the
+# process re-establishes one: PartOf takes fmradiod along when the hub is
+# restarted, and the disconnect handler in main.c covers it crashing.
+After=ls-hubd.service
+PartOf=ls-hubd.service
+# Not ordered after PulseAudio: fmradiod connects to it, and again whenever
+# it comes back, on its own.
+
+[Service]
+Type=simple
+ExecStart=@WEBOS_INSTALL_SBINDIR@/fmradiod
+# Stopping it switches the radio off: the sound first, then the receiver.
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

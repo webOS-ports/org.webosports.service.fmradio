@@ -1,0 +1,4 @@
+[D-BUS Service]
+Name=org.webosports.service.fmradio
+Exec=@WEBOS_INSTALL_SBINDIR@/fmradiod
+Type=static

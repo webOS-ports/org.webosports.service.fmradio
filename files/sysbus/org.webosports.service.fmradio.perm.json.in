@@ -1,0 +1,5 @@
+{
+    "org.webosports.service.fmradio": [
+        "servicebus.signal"
+    ]
+}

@@ -1,0 +1,11 @@
+{
+    "fmradio.operation": [
+        "org.webosports.service.fmradio/getStatus",
+        "org.webosports.service.fmradio/powerOn",
+        "org.webosports.service.fmradio/powerOff",
+        "org.webosports.service.fmradio/tune",
+        "org.webosports.service.fmradio/seek",
+        "org.webosports.service.fmradio/scan",
+        "org.webosports.service.fmradio/findNames"
+    ]
+}
