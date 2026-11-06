@@ -1,5 +1,12 @@
-# org.webosports.service.fmradio
+org.webosports.service.fmradio
+==============================
 
+Summary
+-------
+LuneOS service for a phone's FM radio: tuning, seeking, scanning and RDS.
+
+Description
+-----------
 A phone's FM radio as a LuneOS service: on and off, tuning, seeking and
 scanning the 87.5 - 108 MHz band, the signal strength, and the station's name
 and RadioText from RDS - also the names of the stations not listened to,
@@ -10,8 +17,8 @@ the one whose driver node exists (`fm_tuner_detect`):
   chips. Tested on the MindPhone.
 - Qualcomm's `radio-iris` on `/dev/radio0` (`src/fm_iris.c`), the FM core
   reached over SMD (WCNSS). Tested on tissot-halium (msm8953), which turns
-  on, tunes, seeks and scans but only ever hears noise, so RDS and real
-  stations are untested there.
+  on, tunes, seeks and scans. Reception there is weak: indoors 95.0 MHz
+  plays through noise, seek and scan stop on noise, and RDS is untested.
 
 Sound goes through PulseAudio: while the radio is on, `fmradiod` keeps
 `module-droid-fm` (pulseaudio-modules-droid) loaded, which patches the chip's
@@ -23,7 +30,8 @@ audio patch. Where the module is missing the status has an `audioError`.
 A device with neither node still runs the service; `getStatus` then says
 `available: false`, and a client shows no FM.
 
-## API
+API
+---
 
 All on `luna://org.webosports.service.fmradio/`, in the `fmradio.operation`
 group. Frequencies are in kHz (95.0 MHz is `95000`).
@@ -88,7 +96,8 @@ from a channel up (about 9 s each), repeated past the last while it lists 20,
 then each station tuned to for its strength. The driver keeps a list until it
 is read, so any left over are read away before each search.
 
-## Building and installing
+Building and installing
+-----------------------
 
 CMake with the webOS build macros (`webos_build_system_bus_files`), like the
 other `org.webosports.service.*`. It needs luna-service2, glib-2.0, libpbnjson
@@ -99,7 +108,8 @@ the sysbus files, including a client grant for the Music app.
 system PulseAudio at `unix:/var/run/pulse/native`. It does not wait for
 PulseAudio: it connects when PulseAudio is there, and again after a restart.
 
-## Tests
+Tests
+-----
 
     tests/run.sh [workdir]               # unit tests: gcc, ASan+UBSan (gcc, clang), valgrind
     tests/static-analysis.sh             # gcc -fanalyzer, clang --analyze, clang-tidy,
