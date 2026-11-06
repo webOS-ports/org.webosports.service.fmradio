@@ -15,6 +15,7 @@
 
 #include "../src/fm_band.h"
 #include "../src/fm_rds.h"
+#include "../src/fm_mtk.h"
 #include "../src/fm_tuner.h"
 
 /* ---- the stand-in chip --------------------------------------------------- */
@@ -279,7 +280,7 @@ static void chip_sender(int khz, const char *name, unsigned int after_ms)
 /* A tuner on a stand-in descriptor, powered up at khz. */
 static void tuner_up(struct fm_tuner *t, int khz)
 {
-	fm_tuner_init(t, fake_ioctl);
+	fm_tuner_init(t, &fm_mtk_ops, fake_ioctl);
 	t->read_fn = fake_read;
 	t->sleep_fn = fake_sleep;
 	t->fd = 1000;
@@ -381,7 +382,7 @@ static void test_power_up_rejects_off_band(void)
 	struct fm_tuner t;
 
 	chip_reset();
-	fm_tuner_init(&t, fake_ioctl);
+	fm_tuner_init(&t, &fm_mtk_ops, fake_ioctl);
 	t.fd = 1000;
 	g_assert_cmpint(fm_tuner_power_up(&t, 95050), ==, -EINVAL);
 	g_assert_cmpint(fm_tuner_power_up(&t, 120000), ==, -EINVAL);
@@ -395,7 +396,7 @@ static void test_power_up_failure_leaves_it_down(void)
 	chip_reset();
 	chip.fail_nr = FM_NR_POWERUP;
 	chip.fail_errno = EIO;
-	fm_tuner_init(&t, fake_ioctl);
+	fm_tuner_init(&t, &fm_mtk_ops, fake_ioctl);
 	t.fd = 1000;
 	g_assert_cmpint(fm_tuner_power_up(&t, 95000), ==, -EIO);
 	g_assert_false(t.powered);
@@ -408,7 +409,7 @@ static void test_refused_frequency(void)
 
 	chip_reset();
 	chip.refuse_freq = 95000;
-	fm_tuner_init(&t, fake_ioctl);
+	fm_tuner_init(&t, &fm_mtk_ops, fake_ioctl);
 	t.fd = 1000;
 	g_assert_cmpint(fm_tuner_power_up(&t, 95000), ==, -EIO);
 	g_assert_false(t.powered);
@@ -423,7 +424,7 @@ static void test_tune_needs_power(void)
 	struct fm_tuner t;
 
 	chip_reset();
-	fm_tuner_init(&t, fake_ioctl);
+	fm_tuner_init(&t, &fm_mtk_ops, fake_ioctl);
 	t.fd = 1000;
 	g_assert_cmpint(fm_tuner_tune(&t, 95000), ==, -ENODEV);
 	g_assert_cmpint(chip.calls[FM_NR_TUNE], ==, 0);
@@ -434,7 +435,7 @@ static void test_no_descriptor(void)
 	struct fm_tuner t;
 
 	chip_reset();
-	fm_tuner_init(&t, fake_ioctl);
+	fm_tuner_init(&t, &fm_mtk_ops, fake_ioctl);
 	g_assert_cmpint(fm_tuner_power_up(&t, 95000), ==, -EBADF);
 	g_assert_cmpint(fm_tuner_open(&t, "/nonexistent/fm"), ==, -ENOENT);
 	fm_tuner_close(&t);
@@ -524,7 +525,7 @@ static void test_scan_needs_power(void)
 	size_t n = 99;
 
 	chip_reset();
-	fm_tuner_init(&t, fake_ioctl);
+	fm_tuner_init(&t, &fm_mtk_ops, fake_ioctl);
 	t.fd = 1000;
 	g_assert_cmpint(fm_tuner_scan(&t, NULL, NULL, out, &n), ==, -ENODEV);
 	g_assert_cmpuint(n, ==, 0);
@@ -730,14 +731,29 @@ static void test_tuner_rds(void)
 	tuner_up(&t, 95000);
 	g_assert_cmpint(fm_tuner_rds_enable(&t, true), ==, 0);
 	g_assert_true(chip.rds_on);
-	g_assert_cmpint(fm_tuner_rds_read(&t, &raw), ==, 0);
+	g_assert_cmpint(fm_mtk_rds_read(&t, &raw), ==, 0);
 	g_assert_cmpmem(raw.ps_data.ps[3], 8, "RADIO 2 ", 8);
+
+	/* Through the common call: decoded, with the record's group count. */
+	{
+		struct fm_rds_info info;
+		long groups = -1;
+
+		chip.rds.gc.total = 7;
+		g_assert_cmpint(fm_tuner_rds_get(&t, &info, &groups), ==, 0);
+		g_assert_cmpstr(info.name, ==, "RADIO 2");
+		g_assert_cmpint(groups, ==, 7);
+		g_assert_cmpint(fm_tuner_rds_get(&t, &info, NULL), ==, 0);
+		chip.read_ret = -EIO;
+		g_assert_cmpint(fm_tuner_rds_get(&t, &info, &groups), ==, -EIO);
+		chip.read_ret = 0;
+	}
 
 	/* A short or failed read is no record. */
 	chip.read_ret = 10;
-	g_assert_cmpint(fm_tuner_rds_read(&t, &raw), ==, -ENODATA);
+	g_assert_cmpint(fm_mtk_rds_read(&t, &raw), ==, -ENODATA);
 	chip.read_ret = -EIO;
-	g_assert_cmpint(fm_tuner_rds_read(&t, &raw), ==, -EIO);
+	g_assert_cmpint(fm_mtk_rds_read(&t, &raw), ==, -EIO);
 	chip.read_ret = 0;
 
 	g_assert_cmpint(fm_tuner_rds_enable(&t, false), ==, 0);
@@ -746,7 +762,12 @@ static void test_tuner_rds(void)
 	/* Down: neither is asked of the driver. */
 	g_assert_cmpint(fm_tuner_power_down(&t), ==, 0);
 	g_assert_cmpint(fm_tuner_rds_enable(&t, true), ==, -ENODEV);
-	g_assert_cmpint(fm_tuner_rds_read(&t, &raw), ==, -ENODEV);
+	g_assert_cmpint(fm_mtk_rds_read(&t, &raw), ==, -ENODEV);
+	{
+		struct fm_rds_info info;
+
+		g_assert_cmpint(fm_tuner_rds_get(&t, &info, NULL), ==, -ENODEV);
+	}
 	g_assert_cmpint(chip.calls[FM_NR_RDS_ONOFF], ==, 2);
 }
 

@@ -1,15 +1,25 @@
 # org.webosports.service.fmradio
 
-The FM radio of a MediaTek phone (`/dev/fm`, the `fmradio_drv` driver) as a
-LuneOS service: on and off, tuning, seeking and scanning the 87.5 - 108 MHz
-band, the signal strength, and the station's name and RadioText from RDS -
-also the names of the stations not listened to, looked for with the radio
-off. Sound goes through PulseAudio: while the radio is
-on, `fmradiod` keeps `module-droid-fm` (pulseaudio-modules-droid) loaded,
-which patches the chip's output to the audio HAL's speaker or headphones.
-The wired headphones are the antenna.
+A phone's FM radio as a LuneOS service: on and off, tuning, seeking and
+scanning the 87.5 - 108 MHz band, the signal strength, and the station's name
+and RadioText from RDS - also the names of the stations not listened to,
+looked for with the radio off. Two receivers are known, and the service uses
+the one whose driver node exists (`fm_tuner_detect`):
 
-A device without `/dev/fm` still runs the service; `getStatus` then says
+- MediaTek's `fmradio_drv` on `/dev/fm` (`src/fm_mtk.c`), the MT66xx combo
+  chips. Tested on the MindPhone.
+- Qualcomm's `radio-iris` on `/dev/radio0` (`src/fm_iris.c`), the FM core
+  reached over SMD (WCNSS). Tested on tissot-halium (msm8953), which turns
+  on, tunes, seeks and scans but only ever hears noise, so RDS and real
+  stations are untested there.
+
+Sound goes through PulseAudio: while the radio is on, `fmradiod` keeps
+`module-droid-fm` (pulseaudio-modules-droid) loaded, which patches the chip's
+output to the audio HAL's speaker or headphones. The wired headphones are the
+antenna. Only the MindPhone's build has that module so far; elsewhere the
+status has an `audioError`.
+
+A device with neither node still runs the service; `getStatus` then says
 `available: false`, and a client shows no FM.
 
 ## API
@@ -38,9 +48,9 @@ The status:
       "audioError": "..." }
 
 `rssi` (dBm) and `rds` are there only while the radio is on; `rds` holds
-`name` and `text` only once the driver has confirmed them (the name after
-three receptions agree, the text once a whole RadioText came in), in UTF-8
-from the RDS character set. Both are cleared when the frequency changes.
+`name` and `text` only once the driver has passed them on (on MediaTek the
+name after three receptions agree, the text once a whole RadioText came in;
+on IRIS what the driver queues), in UTF-8 from the RDS character set. Both are cleared when the frequency changes.
 `names` has every station's name the service heard since it started,
 whether listened to or looked for.
 
@@ -62,11 +72,20 @@ power off) ends one that is still running, and that one is answered with
 `errorCode` 125 (ECANCELED). A scan with the radio off powers the receiver up
 without sound and down again afterwards.
 
-The driver on this kernel has no seek or scan ioctl, so both are done
-channel by channel with the soft-mute tune between `PRE_SEARCH` and
-`RESTORE_SEARCH`. A station is also heard on the channels next to it, so
-each run of neighbouring valid channels counts as one station, at its
-strongest channel.
+MediaTek's driver has no seek or scan ioctl, so both are done channel by
+channel with the soft-mute tune between `PRE_SEARCH` and `RESTORE_SEARCH`.
+A station is also heard on the channels next to it, so each run of
+neighbouring valid channels counts as one station, at its strongest channel.
+
+On IRIS the chip searches itself. Before the node is opened the SMD link to
+it is opened (`radio_iris_transport`'s `fmsmd_set`), and the chip is given
+200 ms to answer; if turning it on still fails, the link is closed and opened
+once more. A seek is the chip's, round the band; it stops at once on the
+channel it starts from, so it is then repeated from the next channel, and up
+from 108.0 it starts from 87.5. A scan is the chip's list of the 20 strongest
+from a channel up (about 9 s each), repeated past the last while it lists 20,
+then each station tuned to for its strength. The driver keeps a list until it
+is read, so any left over are read away before each search.
 
 ## Building and installing
 
@@ -85,14 +104,21 @@ PulseAudio: it connects when PulseAudio is there, and again after a restart.
     tests/static-analysis.sh             # gcc -fanalyzer, clang --analyze, clang-tidy,
                                          # cppcheck, flawfinder, sparse, Coccinelle
 
-The unit tests drive `fm_tuner.c` and `fm_band.c` against a stand-in chip: power,
+`tests/test_tuner.c` drives `fm_tuner.c`, `fm_mtk.c` and `fm_band.c` against a
+stand-in MediaTek chip: power,
 tuning, seek (leaving the current station, climbing to the peak, round the band,
 cancelled), scan (merging runs, a channel that fails, cancelled) and the ioctl
 encoding, and `fm_rds.c` (the RDS character set, trimming, the end of a
 RadioText, control codes, never overrunning, the driver's record layout and
 which of its copies count), and looking for a station's name (found, a
 station with no RDS, one whose name is never confirmed, a failed read,
-cancelled, off). `run.sh` builds and runs in `~/claude-scratch/fmradio-tests` unless
+cancelled, off). `tests/test_iris.c` does the same for `fm_iris.c` against a
+stand-in radio-iris: the link (opened first, slow, staying down), power-up
+settings and their failures, a tune the chip reports late, the signed RSSI,
+the PS, RadioText and station-list records, the group counters, the chip's
+seek (from the top, stopping on its start, round the band, cancelled, timed
+out) and its list scan (several passes, a list left over, cancelled).
+`run.sh` builds and runs both in `~/claude-scratch/fmradio-tests` unless
 given a directory. `static-analysis.sh` takes the headers from pkg-config, or
 from `FM_CFLAGS` for a Yocto sysroot, and the Coccinelle checks from a
 kernel's `scripts/coccinelle` in `COCCI_DIR`.

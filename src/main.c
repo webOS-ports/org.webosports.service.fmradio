@@ -17,8 +17,9 @@
 /*
  * fmradiod - org.webosports.service.fmradio
  *
- * Puts the FM radio on the bus: the MediaTek receiver behind /dev/fm for
- * tuning (fm_tuner.c), and module-droid-fm in PulseAudio for the sound
+ * Puts the FM radio on the bus: the receiver for tuning (fm_tuner.c - the
+ * MediaTek one behind /dev/fm or Qualcomm's behind /dev/radio0, whichever
+ * this device has), and module-droid-fm in PulseAudio for the sound
  * (fm_audio.c), which plays the radio through the audio HAL as a stream on
  * the "fm" sink - ducked, muted and turned up and down by the policy and the
  * volume keys like any other.
@@ -46,10 +47,6 @@
 #include "fm_tuner.h"
 
 #define FMRADIO_SERVICE "org.webosports.service.fmradio"
-
-#ifndef FM_DEVICE
-#define FM_DEVICE "/dev/fm"
-#endif
 
 #ifndef FM_PULSE_SERVER
 #define FM_PULSE_SERVER "unix:/var/run/pulse/native"
@@ -190,7 +187,7 @@ static void run_job(struct fm_tuner *t, struct job *j)
 	switch (j->kind)
 	{
 		case JOB_POWER_ON:
-			ret = fm_tuner_open(t, FM_DEVICE);
+			ret = fm_tuner_open(t, NULL);
 
 			if (ret == 0)
 			{
@@ -228,7 +225,7 @@ static void run_job(struct fm_tuner *t, struct job *j)
 			 */
 			if (!t->powered)
 			{
-				ret = fm_tuner_open(t, FM_DEVICE);
+				ret = fm_tuner_open(t, NULL);
 
 				if (ret == 0)
 				{
@@ -261,7 +258,7 @@ static void run_job(struct fm_tuner *t, struct job *j)
 				break;
 			}
 
-			ret = j->want.n > 0 ? fm_tuner_open(t, FM_DEVICE) : 0;
+			ret = j->want.n > 0 ? fm_tuner_open(t, NULL) : 0;
 
 			if (ret == 0 && j->want.n > 0)
 			{
@@ -304,24 +301,28 @@ static void run_job(struct fm_tuner *t, struct job *j)
 	j->tuned_khz = t->khz;
 	j->have_rssi = t->powered && fm_tuner_rssi(t, &j->rssi) == 0;
 
-	{
-		struct fm_rds_raw raw;
-
-		j->have_rds = t->powered && fm_tuner_rds_read(t, &raw) == 0;
-
-		if (j->have_rds)
-		{
-			fm_rds_decode(&raw, &j->rds);
-		}
-	}
+	j->have_rds = t->powered && fm_tuner_rds_get(t, &j->rds, NULL) == 0;
 }
 
 static gpointer worker_main(gpointer data)
 {
 	struct fm_tuner tuner;
+	const struct fm_tuner_ops *ops = fm_tuner_detect();
 
 	(void)data;
-	fm_tuner_init(&tuner, NULL);
+
+	/* None found: the MediaTek one, whose open then says what is missing. */
+	if (!ops)
+	{
+		g_warning("no FM receiver: neither %s nor %s", fm_mtk_ops.path, fm_iris_ops.path);
+		ops = &fm_mtk_ops;
+	}
+	else
+	{
+		g_message("FM receiver: %s on %s", ops->name, ops->path);
+	}
+
+	fm_tuner_init(&tuner, ops, NULL);
 
 	for (;;)
 	{
@@ -476,7 +477,7 @@ static jvalue_ref build_status(void)
 
 	jobject_put(reply, J_CSTR_TO_JVAL("returnValue"), jboolean_create(true));
 	jobject_put(reply, J_CSTR_TO_JVAL("available"),
-	            jboolean_create(g_file_test(FM_DEVICE, G_FILE_TEST_EXISTS)));
+	            jboolean_create(fm_tuner_detect() != NULL));
 	jobject_put(reply, J_CSTR_TO_JVAL("powered"), jboolean_create(st.powered));
 	jobject_put(reply, J_CSTR_TO_JVAL("frequency"), jnumber_create_i32(st.khz));
 	jobject_put(reply, J_CSTR_TO_JVAL("busy"), jstring_create(busy_text()));
