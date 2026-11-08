@@ -10,8 +10,8 @@ Description
 A phone's FM radio as a LuneOS service: on and off, tuning, seeking and
 scanning the 87.5 - 108 MHz band, the signal strength, and the station's name
 and RadioText from RDS - also the names of the stations not listened to,
-looked for with the radio off. Two receivers are known, and the service uses
-the one whose driver node exists (`fm_tuner_detect`):
+looked for with the radio off. Three receivers are known, and the service
+uses the first that is there (`fm_tuner_detect`):
 
 - MediaTek's `fmradio_drv` on `/dev/fm` (`src/fm_mtk.c`), the MT66xx combo
   chips. Tested on the MindPhone.
@@ -19,15 +19,21 @@ the one whose driver node exists (`fm_tuner_detect`):
   reached over SMD (WCNSS). Tested on tissot-halium (msm8953), which turns
   on, tunes, seeks and scans. Reception there is weak: indoors 95.0 MHz
   plays through noise, seek and scan stop on noise, and RDS is untested.
+- Qualcomm's WCN3990-class chips ("cherokee", e.g. the BlackBerry KEY2's
+  SDM660), whose FM has no kernel driver (`src/fm_helium.c`): HCI commands
+  through `vendor.qti.hardware.fm@1.0::IFmHci`, which the vendor's Bluetooth
+  HAL registers, over libgbinder (`src/fm_helium_hidl.c`). Found by the
+  vendor's `vendor.qti.hardware.fm@1.0-impl.so`. Written from the radio-iris
+  command set and Qualcomm's helium FM HAL; not yet run on a device.
 
 Sound goes through PulseAudio: while the radio is on, `fmradiod` keeps
 `module-droid-fm` (pulseaudio-modules-droid) loaded, which patches the chip's
 output to the audio HAL's speaker or headphones. The wired headphones are the
-antenna. On IRIS the module is loaded with `mode=parameters`: Qualcomm's audio
+antenna. On both Qualcomm receivers the module is loaded with `mode=parameters`: Qualcomm's audio
 HALs take FM through `set_parameters` (`handle_fm`, `fm_volume`), not as an
 audio patch. Where the module is missing the status has an `audioError`.
 
-A device with neither node still runs the service; `getStatus` then says
+A device with none of them still runs the service; `getStatus` then says
 `available: false`, and a client shows no FM.
 
 API
@@ -96,12 +102,23 @@ from a channel up (about 9 s each), repeated past the last while it lists 20,
 then each station tuned to for its strength. The driver keeps a list until it
 is read, so any left over are read away before each search.
 
+On helium the service sends the chip what radio-iris' `initialise_recv`
+sends after the receiver is on (soft mute, stereo with blending, the event
+mask), then the band, the wired antenna and the channel, and opens the
+SLIMbus port the audio leaves the chip on, as Qualcomm's FM app does before
+it routes FM. Seeking is the chip's, as on IRIS, with the same care for a
+chip that stops on the channel it starts from. A scan is seek after seek
+from 87.5 up until the chip comes round again: the chip's station list is
+not used, because radio-iris and helium lay its request out differently and
+which one this chip reads is not known. A cancelled search is waited out
+for its Search Complete, which would otherwise end the next search at once.
+
 Building and installing
 -----------------------
 
 CMake with the webOS build macros (`webos_build_system_bus_files`), like the
-other `org.webosports.service.*`. It needs luna-service2, glib-2.0, libpbnjson
-and libpulse-mainloop-glib. It installs `fmradiod`, `fmradiod.service`, and
+other `org.webosports.service.*`. It needs luna-service2, glib-2.0, libpbnjson,
+libpulse-mainloop-glib and libgbinder. It installs `fmradiod`, `fmradiod.service`, and
 the sysbus files, including a client grant for the Music app.
 
 `fmradiod.service` runs it as root, so it can open `/dev/fm` and reach the
@@ -129,7 +146,14 @@ settings and their failures, a tune the chip reports late, the signed RSSI,
 the PS, RadioText and station-list records, the group counters, the chip's
 seek (from the top, stopping on its start, round the band, cancelled, timed
 out) and its list scan (several passes, a list left over, cancelled).
-`run.sh` builds and runs both in `~/claude-scratch/fmradio-tests` unless
+`tests/test_helium.c` drives `fm_helium.c` against a stand-in HCI chip: the
+link, the power-up commands and their parameters, each failing, answers
+matched to their command, a command never answered, malformed events, a
+tune reported late or never, the signed RSSI, RDS on and off, the PS and
+RadioText events, the group counters, the chip's seek (round the band, from
+the top, stopping on its start, cancelled, timed out, a cancel ended late or
+not at all) and the scan by seeks.
+`run.sh` builds and runs all three in `~/claude-scratch/fmradio-tests` unless
 given a directory. `static-analysis.sh` takes the headers from pkg-config, or
 from `FM_CFLAGS` for a Yocto sysroot, and the Coccinelle checks from a
 kernel's `scripts/coccinelle` in `COCCI_DIR`.
