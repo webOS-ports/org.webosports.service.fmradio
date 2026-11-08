@@ -7,7 +7,7 @@
 #
 # Builds each test (tests/test_tuner.c: MediaTek, tests/test_iris.c: Qualcomm
 # radio-iris, tests/test_helium.c: Qualcomm over HCI, tests/test_audio.c: the
-# PulseAudio connection) with the sources on the host and runs it plain, under
+# PulseAudio connection, tests/test_join.c: the worker's join at exit) with the sources on the host and runs it plain, under
 # ASan + UBSan (gcc and clang), and under valgrind memcheck. Needs glib's and
 # libpulse's development files and the kernel's uapi headers: the chips and
 # the PulseAudio server are stand-ins.
@@ -26,14 +26,18 @@ LIBFILES="$SRC/fm_band.c $SRC/fm_tuner.c $SRC/fm_mtk.c $SRC/fm_iris.c $SRC/fm_he
 PULSE=$(pkg-config --cflags --libs libpulse libpulse-mainloop-glib)
 # Short retry delays, so the reconnect tests take a second, not a minute.
 AUDIO="-DFM_AUDIO_RETRY_MS=20 -DFM_AUDIO_RETRY_MAX_MS=80 $SRC/fm_audio.c $PULSE"
-TESTS="tuner iris helium audio"
+TESTS="tuner iris helium audio join"
 fail=0
 
 build() {
 	name=$1; shift
 	for t in $TESTS; do
 		echo "== build $t-$name"
-		if [ "$t" = audio ]; then files=$AUDIO; else files=$LIBFILES; fi
+		case $t in
+			audio) files=$AUDIO ;;
+			join) files=$SRC/fm_join.c ;;
+			*) files=$LIBFILES ;;
+		esac
 		# shellcheck disable=SC2086
 		"$@" -g -O1 -fno-omit-frame-pointer $WARN "$HERE/test_$t.c" $files \
 			-o "$WORK/test-$t-$name" $GLIB || fail=1

@@ -160,7 +160,11 @@ not at all) and the scan by seeks.
 socket standing in for PulseAudio: refusing (not up yet), missing, taking a
 connection and dropping it. fmradiod holds one connection at a time, logs one
 warning per outage and leaves no timer behind when freed.
-`run.sh` builds and runs all four in `~/claude-scratch/fmradio-tests` unless
+
+`tests/test_join.c` checks the join at exit: a thread that, winding down,
+waits for an answer only the main context delivers (as the helium link's
+are) gets it, and the join neither hangs nor sits out the thread's timeout.
+`run.sh` builds and runs all five in `~/claude-scratch/fmradio-tests` unless
 given a directory. `static-analysis.sh` takes the headers from pkg-config, or
 from `FM_CFLAGS` for a Yocto sysroot, and the Coccinelle checks from a
 kernel's `scripts/coccinelle` in `COCCI_DIR`.
