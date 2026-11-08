@@ -6,10 +6,11 @@
 # run.sh [workdir]
 #
 # Builds each test (tests/test_tuner.c: MediaTek, tests/test_iris.c: Qualcomm
-# radio-iris, tests/test_helium.c: Qualcomm over HCI)
-# with the tuner sources on the host and runs it plain, under ASan + UBSan (gcc
-# and clang), and under valgrind memcheck. Needs only glib's development files
-# and the kernel's uapi headers: the chips are stand-ins.
+# radio-iris, tests/test_helium.c: Qualcomm over HCI, tests/test_audio.c: the
+# PulseAudio connection) with the sources on the host and runs it plain, under
+# ASan + UBSan (gcc and clang), and under valgrind memcheck. Needs glib's and
+# libpulse's development files and the kernel's uapi headers: the chips and
+# the PulseAudio server are stand-ins.
 set -u
 
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -22,15 +23,19 @@ cd "$WORK" || exit 1
 GLIB=$(pkg-config --cflags --libs glib-2.0)
 WARN="-Wall -Wextra -Wshadow -Wconversion -Wno-sign-conversion -Werror"
 LIBFILES="$SRC/fm_band.c $SRC/fm_tuner.c $SRC/fm_mtk.c $SRC/fm_iris.c $SRC/fm_helium.c $SRC/fm_rds.c"
-TESTS="tuner iris helium"
+PULSE=$(pkg-config --cflags --libs libpulse libpulse-mainloop-glib)
+# Short retry delays, so the reconnect tests take a second, not a minute.
+AUDIO="-DFM_AUDIO_RETRY_MS=20 -DFM_AUDIO_RETRY_MAX_MS=80 $SRC/fm_audio.c $PULSE"
+TESTS="tuner iris helium audio"
 fail=0
 
 build() {
 	name=$1; shift
 	for t in $TESTS; do
 		echo "== build $t-$name"
+		if [ "$t" = audio ]; then files=$AUDIO; else files=$LIBFILES; fi
 		# shellcheck disable=SC2086
-		"$@" -g -O1 -fno-omit-frame-pointer $WARN "$HERE/test_$t.c" $LIBFILES \
+		"$@" -g -O1 -fno-omit-frame-pointer $WARN "$HERE/test_$t.c" $files \
 			-o "$WORK/test-$t-$name" $GLIB || fail=1
 	done
 }

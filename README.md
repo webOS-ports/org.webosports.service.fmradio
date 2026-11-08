@@ -123,7 +123,9 @@ the sysbus files, including a client grant for the Music app.
 
 `fmradiod.service` runs it as root, so it can open `/dev/fm` and reach the
 system PulseAudio at `unix:/var/run/pulse/native`. It does not wait for
-PulseAudio: it connects when PulseAudio is there, and again after a restart.
+PulseAudio: it connects when PulseAudio is there, and again after a restart,
+trying every second at first and then less often, up to every 16 seconds,
+with one warning per outage.
 
 Tests
 -----
@@ -153,7 +155,12 @@ tune reported late or never, the signed RSSI, RDS on and off, the PS and
 RadioText events, the group counters, the chip's seek (round the band, from
 the top, stopping on its start, cancelled, timed out, a cancel ended late or
 not at all) and the scan by seeks.
-`run.sh` builds and runs all three in `~/claude-scratch/fmradio-tests` unless
+
+`tests/test_audio.c` drives `fm_audio.c` with the real libpulse against a
+socket standing in for PulseAudio: refusing (not up yet), missing, taking a
+connection and dropping it. fmradiod holds one connection at a time, logs one
+warning per outage and leaves no timer behind when freed.
+`run.sh` builds and runs all four in `~/claude-scratch/fmradio-tests` unless
 given a directory. `static-analysis.sh` takes the headers from pkg-config, or
 from `FM_CFLAGS` for a Yocto sysroot, and the Coccinelle checks from a
 kernel's `scripts/coccinelle` in `COCCI_DIR`.
