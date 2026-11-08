@@ -15,16 +15,18 @@ pkg_check_modules(GLIB2 REQUIRED glib-2.0)
 pkg_check_modules(LS2 REQUIRED luna-service2)
 pkg_check_modules(PBNJSON_C REQUIRED pbnjson_c)
 pkg_check_modules(PULSE REQUIRED libpulse-mainloop-glib)
+pkg_check_modules(GBINDER REQUIRED libgbinder)
 
 include_directories(${GLIB2_INCLUDE_DIRS} ${LS2_INCLUDE_DIRS}
-                    ${PBNJSON_C_INCLUDE_DIRS} ${PULSE_INCLUDE_DIRS})
+                    ${PBNJSON_C_INCLUDE_DIRS} ${PULSE_INCLUDE_DIRS}
+                    ${GBINDER_INCLUDE_DIRS})
 
 webos_add_compiler_flags(ALL -Wall -Wextra)
 
 add_executable(fmradiod src/main.c src/fm_band.c src/fm_tuner.c src/fm_mtk.c src/fm_iris.c
-                        src/fm_rds.c src/fm_audio.c)
+                        src/fm_helium.c src/fm_helium_hidl.c src/fm_rds.c src/fm_audio.c)
 target_link_libraries(fmradiod ${GLIB2_LDFLAGS} ${LS2_LDFLAGS}
-                               ${PBNJSON_C_LDFLAGS} ${PULSE_LDFLAGS})
+                               ${PBNJSON_C_LDFLAGS} ${PULSE_LDFLAGS} ${GBINDER_LDFLAGS})
 
 webos_build_daemon(NAME fmradiod LAUNCH files/launch)
 webos_build_system_bus_files()

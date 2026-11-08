@@ -12,7 +12,17 @@
 #include <string.h>
 
 #define MODULE_NAME "module-droid-fm"
-#define RETRY_MS 2000
+/*
+ * Connecting again after a failure: after FM_AUDIO_RETRY_MS, doubling up to
+ * FM_AUDIO_RETRY_MAX_MS while PulseAudio stays away. (The tests build with
+ * shorter ones.)
+ */
+#ifndef FM_AUDIO_RETRY_MS
+#define FM_AUDIO_RETRY_MS 1000
+#endif
+#ifndef FM_AUDIO_RETRY_MAX_MS
+#define FM_AUDIO_RETRY_MAX_MS 16000
+#endif
 #define FREE_WAIT_US G_USEC_PER_SEC
 
 struct fm_audio
@@ -31,6 +41,8 @@ struct fm_audio
 	uint32_t index;         /* of the module, PA_INVALID_INDEX if none */
 	char *error;
 	guint retry_id;
+	guint retry_ms;         /* the next wait before connecting again */
+	bool down;              /* not connected since the last failure was logged */
 };
 
 static void connect_pulse(struct fm_audio *a);
@@ -165,6 +177,32 @@ static gboolean retry(gpointer userdata)
 	return G_SOURCE_REMOVE;
 }
 
+/*
+ * The one place a retry is set up: never a second timer while one waits,
+ * else each failure that is reported twice doubles them.
+ */
+static void schedule_retry(struct fm_audio *a)
+{
+	if (a->retry_id)
+	{
+		return;
+	}
+
+	a->retry_id = g_timeout_add(a->retry_ms, retry, a);
+	a->retry_ms = MIN(a->retry_ms * 2, FM_AUDIO_RETRY_MAX_MS);
+}
+
+/* Said once per outage, not on every attempt. */
+static void log_down(struct fm_audio *a, const char *what, int error)
+{
+	if (!a->down)
+	{
+		g_warning("%s PulseAudio at %s: %s; trying again until it is there", what, a->server,
+		          pa_strerror(error));
+		a->down = true;
+	}
+}
+
 static void drop_context(struct fm_audio *a)
 {
 	if (!a->ctx)
@@ -187,7 +225,14 @@ static void context_state(pa_context *c, void *userdata)
 	switch (pa_context_get_state(c))
 	{
 		case PA_CONTEXT_READY:
+			if (a->down)
+			{
+				g_message("connected to PulseAudio at %s", a->server);
+				a->down = false;
+			}
+
 			a->ready = true;
+			a->retry_ms = FM_AUDIO_RETRY_MS;
 			/* The module index is only good for this PulseAudio: list what
 			 * it has rather than trust one from before. */
 			a->index = PA_INVALID_INDEX;
@@ -196,16 +241,11 @@ static void context_state(pa_context *c, void *userdata)
 
 		case PA_CONTEXT_FAILED:
 		case PA_CONTEXT_TERMINATED:
-			g_warning("lost PulseAudio: %s", pa_strerror(pa_context_errno(c)));
+			log_down(a, a->ready ? "lost" : "cannot connect to", pa_context_errno(c));
 			drop_context(a);
 			a->index = PA_INVALID_INDEX;
 			notify(a);
-
-			if (!a->retry_id)
-			{
-				a->retry_id = g_timeout_add(RETRY_MS, retry, a);
-			}
-
+			schedule_retry(a);
 			break;
 
 		default:
@@ -216,24 +256,45 @@ static void context_state(pa_context *c, void *userdata)
 static void connect_pulse(struct fm_audio *a)
 {
 	pa_mainloop_api *api = pa_glib_mainloop_get_api(a->mainloop);
+	pa_context *c;
 
-	a->ctx = pa_context_new(api, "org.webosports.service.fmradio");
-
-	if (!a->ctx)
+	if (a->ctx)
 	{
-		a->retry_id = g_timeout_add(RETRY_MS, retry, a);
 		return;
 	}
 
-	pa_context_set_state_callback(a->ctx, context_state, a);
+	c = pa_context_new(api, "org.webosports.service.fmradio");
 
-	if (pa_context_connect(a->ctx, a->server, PA_CONTEXT_NOAUTOSPAWN, NULL) < 0)
+	if (!c)
 	{
-		g_warning("cannot connect to PulseAudio at %s: %s", a->server,
-		          pa_strerror(pa_context_errno(a->ctx)));
-		drop_context(a);
-		a->retry_id = g_timeout_add(RETRY_MS, retry, a);
+		schedule_retry(a);
+		return;
 	}
+
+	a->ctx = c;
+	pa_context_set_state_callback(c, context_state, a);
+
+	/*
+	 * A socket that refuses (PulseAudio not up yet) fails inside
+	 * pa_context_connect(): context_state() has then seen FAILED, dropped
+	 * the context and set up the retry before this returns. Held here so its
+	 * error can still be read either way.
+	 */
+	pa_context_ref(c);
+
+	if (pa_context_connect(c, a->server, PA_CONTEXT_NOAUTOSPAWN, NULL) < 0)
+	{
+		log_down(a, "cannot connect to", pa_context_errno(c));
+
+		if (a->ctx == c)
+		{
+			drop_context(a);
+		}
+
+		schedule_retry(a);
+	}
+
+	pa_context_unref(c);
 }
 
 struct fm_audio *fm_audio_new(const char *server, const char *module_args,
@@ -247,6 +308,7 @@ struct fm_audio *fm_audio_new(const char *server, const char *module_args,
 	a->changed = changed;
 	a->data = data;
 	a->index = PA_INVALID_INDEX;
+	a->retry_ms = FM_AUDIO_RETRY_MS;
 	connect_pulse(a);
 	return a;
 }
