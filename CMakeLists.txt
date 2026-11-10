@@ -24,7 +24,8 @@ include_directories(${GLIB2_INCLUDE_DIRS} ${LS2_INCLUDE_DIRS}
 webos_add_compiler_flags(ALL -Wall -Wextra)
 
 add_executable(fmradiod src/main.c src/fm_band.c src/fm_tuner.c src/fm_mtk.c src/fm_iris.c
-                        src/fm_helium.c src/fm_helium_hidl.c src/fm_rds.c src/fm_audio.c)
+                        src/fm_helium.c src/fm_helium_hidl.c src/fm_rds.c src/fm_audio.c
+                        src/fm_join.c)
 target_link_libraries(fmradiod ${GLIB2_LDFLAGS} ${LS2_LDFLAGS}
                                ${PBNJSON_C_LDFLAGS} ${PULSE_LDFLAGS} ${GBINDER_LDFLAGS})
 

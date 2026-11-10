@@ -45,6 +45,7 @@
 #include "fm_audio.h"
 #include "fm_band.h"
 #include "fm_helium.h"
+#include "fm_join.h"
 #include "fm_rds.h"
 #include "fm_tuner.h"
 
@@ -128,6 +129,8 @@ static struct fm_audio *audio = NULL;
 
 static GAsyncQueue *jobs = NULL;
 static GThread *worker = NULL;
+/* Set by the worker as it finishes; see fm_join_dispatching(). */
+static gint worker_done = 0;
 
 /*
  * Bumped for every request that changes what the radio does. A seek or scan
@@ -344,6 +347,7 @@ static gpointer worker_main(gpointer data)
 
 	/* Nothing may leave the receiver running behind the service. */
 	fm_tuner_close(&tuner);
+	fm_join_thread_done(&worker_done);
 	return NULL;
 }
 
@@ -1087,7 +1091,9 @@ int main(int argc, char **argv)
 	quit->kind = JOB_QUIT;
 	g_atomic_int_inc(&preempt_gen);
 	g_async_queue_push(jobs, quit);
-	g_thread_join(worker);
+	/* Not a plain join: powering the receiver down waits for the chip's
+	 * answers, which the helium link delivers on this thread. */
+	fm_join_dispatching(worker, &worker_done);
 
 	/* Results the worker sent after the loop stopped. */
 	while (g_main_context_pending(NULL))
