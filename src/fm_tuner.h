@@ -18,6 +18,8 @@
  *   connectivity combo chips.
  * - fm_iris_ops: Qualcomm's radio-iris on /dev/radio0 (fm_iris.c), the FM
  *   part of the WCNSS (WCN36xx) Wi-Fi/Bluetooth chips, over SMD.
+ * - fm_helium_ops: the FM part of Qualcomm's WCN3990-class chips (fm_helium.c),
+ *   which has no driver node: HCI packets through the vendor's Bluetooth HAL.
  *
  * What is the same for both lives here: the band checks, what the
  * receiver's state allows, and the station name search. A backend only does
@@ -45,6 +47,8 @@ typedef bool (*fm_cancel_fn)(void *data);
 typedef void (*fm_sleep_fn)(unsigned int ms);
 
 struct fm_tuner;
+struct fm_hci;
+struct fm_hci_ops;
 
 /*
  * A backend. Each call is only made in the state it needs - the receiver up
@@ -53,8 +57,8 @@ struct fm_tuner;
  */
 struct fm_tuner_ops
 {
-	const char *name;       /* "mtk", "iris" */
-	const char *path;       /* the driver's node */
+	const char *name;       /* "mtk", "iris", "helium" */
+	const char *path;       /* the driver's node, or what marks the chip as there */
 	int open_flags;
 	/*
 	 * module-droid-fm's arguments for the audio HAL that comes with this
@@ -65,6 +69,12 @@ struct fm_tuner_ops
 
 	/* Before the node is opened (NULL: nothing to do). */
 	void (*before_open)(struct fm_tuner *t);
+	/*
+	 * Instead of opening path, for a receiver without a node (NULL: open(2)
+	 * path): 0 or -errno. close undoes it.
+	 */
+	int (*open)(struct fm_tuner *t);
+	void (*close)(struct fm_tuner *t);
 
 	/* From down: up and tuned to khz, powered and khz set; down on failure. */
 	int (*power_up)(struct fm_tuner *t, int khz);
@@ -85,6 +95,7 @@ struct fm_tuner_ops
 
 extern const struct fm_tuner_ops fm_mtk_ops;
 extern const struct fm_tuner_ops fm_iris_ops;
+extern const struct fm_tuner_ops fm_helium_ops;
 
 /* The known backends in the order they are looked for, NULL-terminated. */
 extern const struct fm_tuner_ops *const fm_tuner_backends[];
@@ -99,8 +110,13 @@ struct fm_tuner
 	fm_sleep_fn sleep_fn;   /* nanosleep(2) unless a test sets its own */
 	bool powered;
 	int khz;        /* tuned to, while powered */
-	/* IRIS: what the driver handed over of this station's RDS so far. */
+	/* IRIS, helium: what the chip handed over of this station's RDS so far. */
 	struct fm_rds_info rds;
+	/* helium: how its packets reach the chip (the service: HIDL; a test: its
+	 * own), and the link while it is open. */
+	const struct fm_hci_ops *hci_ops;
+	struct fm_hci *hci;
+	bool linked;            /* opened through ops->open */
 };
 
 /* The backend whose driver node exists here, or NULL if none does. */
@@ -109,7 +125,8 @@ const struct fm_tuner_ops *fm_tuner_detect(void);
 /* ioctl_fn NULL: the real ioctl(2). */
 void fm_tuner_init(struct fm_tuner *t, const struct fm_tuner_ops *ops, fm_ioctl_fn ioctl_fn);
 
-/* Opens path, or the backend's own node when path is NULL. */
+/* Opens path, or the backend's own node when path is NULL; a backend
+ * without a node connects its own way. */
 int fm_tuner_open(struct fm_tuner *t, const char *path);
 
 /* Powers the receiver down first if it is up. */

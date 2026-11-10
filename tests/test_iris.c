@@ -612,10 +612,11 @@ static void test_ops(void)
 	g_assert_cmpstr(fm_iris_ops.audio_args, ==, "mode=parameters");
 	g_assert_null(fm_mtk_ops.audio_args);
 
-	/* Both looked for, MediaTek first. */
+	/* All looked for, MediaTek first, the node-less helium last. */
 	g_assert_true(fm_tuner_backends[0] == &fm_mtk_ops);
 	g_assert_true(fm_tuner_backends[1] == &fm_iris_ops);
-	g_assert_null(fm_tuner_backends[2]);
+	g_assert_true(fm_tuner_backends[2] == &fm_helium_ops);
+	g_assert_null(fm_tuner_backends[3]);
 }
 
 static void test_open_opens_the_link_first(void)

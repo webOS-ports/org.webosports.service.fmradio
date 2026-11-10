@@ -53,7 +53,8 @@ static void sys_sleep(unsigned int ms)
 	}
 }
 
-const struct fm_tuner_ops *const fm_tuner_backends[] = { &fm_mtk_ops, &fm_iris_ops, NULL };
+const struct fm_tuner_ops *const fm_tuner_backends[] = { &fm_mtk_ops, &fm_iris_ops, &fm_helium_ops,
+                                                         NULL };
 
 const struct fm_tuner_ops *fm_tuner_detect(void)
 {
@@ -80,13 +81,21 @@ void fm_tuner_init(struct fm_tuner *t, const struct fm_tuner_ops *ops, fm_ioctl_
 	t->powered = false;
 	t->khz = 0;
 	t->rds = (struct fm_rds_info){ .name = "" };
+	t->hci_ops = NULL;
+	t->hci = NULL;
+	t->linked = false;
+}
+
+static bool is_open(const struct fm_tuner *t)
+{
+	return t->fd >= 0 || t->linked;
 }
 
 int fm_tuner_open(struct fm_tuner *t, const char *path)
 {
 	int fd;
 
-	if (t->fd >= 0)
+	if (is_open(t))
 	{
 		return 0;
 	}
@@ -94,6 +103,15 @@ int fm_tuner_open(struct fm_tuner *t, const char *path)
 	if (t->ops->before_open)
 	{
 		t->ops->before_open(t);
+	}
+
+	if (t->ops->open)
+	{
+		/* The backend's own hook, not open(2). */
+		int ret = t->ops->open(t); /* Flawfinder: ignore */
+
+		t->linked = ret == 0;
+		return ret;
 	}
 
 	/* The driver's node, a fixed path: nothing to redirect. */
@@ -110,7 +128,7 @@ int fm_tuner_open(struct fm_tuner *t, const char *path)
 
 void fm_tuner_close(struct fm_tuner *t)
 {
-	if (t->fd < 0)
+	if (!is_open(t))
 	{
 		return;
 	}
@@ -118,6 +136,13 @@ void fm_tuner_close(struct fm_tuner *t)
 	if (t->powered)
 	{
 		(void)fm_tuner_power_down(t);
+	}
+
+	if (t->linked)
+	{
+		t->ops->close(t);
+		t->linked = false;
+		return;
 	}
 
 	(void)close(t->fd);
@@ -136,7 +161,7 @@ int fm_tuner_power_up(struct fm_tuner *t, int khz)
 		return fm_tuner_tune(t, khz);
 	}
 
-	if (t->fd < 0)
+	if (!is_open(t))
 	{
 		return -EBADF;
 	}

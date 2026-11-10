@@ -18,8 +18,9 @@
  * fmradiod - org.webosports.service.fmradio
  *
  * Puts the FM radio on the bus: the receiver for tuning (fm_tuner.c - the
- * MediaTek one behind /dev/fm or Qualcomm's behind /dev/radio0, whichever
- * this device has), and module-droid-fm in PulseAudio for the sound
+ * MediaTek one behind /dev/fm, Qualcomm's behind /dev/radio0, or Qualcomm's
+ * reached through the Bluetooth HAL, whichever this device has), and
+ * module-droid-fm in PulseAudio for the sound
  * (fm_audio.c), which plays the radio through the audio HAL as a stream on
  * the "fm" sink - ducked, muted and turned up and down by the policy and the
  * volume keys like any other.
@@ -43,6 +44,7 @@
 
 #include "fm_audio.h"
 #include "fm_band.h"
+#include "fm_helium.h"
 #include "fm_rds.h"
 #include "fm_tuner.h"
 
@@ -314,7 +316,8 @@ static gpointer worker_main(gpointer data)
 	/* None found: the MediaTek one, whose open then says what is missing. */
 	if (!ops)
 	{
-		g_warning("no FM receiver: neither %s nor %s", fm_mtk_ops.path, fm_iris_ops.path);
+		g_warning("no FM receiver: none of %s, %s, %s", fm_mtk_ops.path, fm_iris_ops.path,
+		          fm_helium_ops.path);
 		ops = &fm_mtk_ops;
 	}
 	else
@@ -323,6 +326,7 @@ static gpointer worker_main(gpointer data)
 	}
 
 	fm_tuner_init(&tuner, ops, NULL);
+	tuner.hci_ops = &fm_hci_hidl_ops;
 
 	for (;;)
 	{
