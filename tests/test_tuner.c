@@ -27,6 +27,7 @@ static struct
 	bool powered;
 	int freq;                       /* driver units, 10 kHz */
 	bool searching;
+	bool no_search_mode;            /* PRE/RESTORE_SEARCH: EPERM, as the MT6631 */
 	int calls[64];                  /* per ioctl number */
 	int fail_nr;                    /* this ioctl fails ... */
 	int fail_errno;                 /* ... with this */
@@ -174,11 +175,21 @@ static int fake_ioctl(int fd, unsigned long request, void *arg)
 		}
 
 		case FM_NR_PRE_SEARCH:
+			if (chip.no_search_mode)
+			{
+				return -EPERM;
+			}
+
 			g_assert_false(chip.searching);
 			chip.searching = true;
 			return 0;
 
 		case FM_NR_RESTORE_SEARCH:
+			if (chip.no_search_mode)
+			{
+				return -EPERM;
+			}
+
 			g_assert_true(chip.searching);
 			chip.searching = false;
 			return 0;
@@ -188,8 +199,9 @@ static int fake_ioctl(int fd, unsigned long request, void *arg)
 			struct fm_softmute_tune_t *p = arg;
 			int s;
 
-			/* Only ever inside PRE_SEARCH/RESTORE_SEARCH, as Android does. */
-			g_assert_true(chip.searching);
+			/* Only ever inside PRE_SEARCH/RESTORE_SEARCH, as Android does,
+			 * on a chip that has them. */
+			g_assert_true(chip.searching || chip.no_search_mode);
 			chip.probes++;
 
 			if (p->freq * 10 == chip.fail_freq)
@@ -541,9 +553,32 @@ static void test_scan_pre_search_fails(void)
 	chip_reset();
 	tuner_up(&t, 100000);
 	chip.fail_nr = FM_NR_PRE_SEARCH;
-	chip.fail_errno = EPERM;
-	g_assert_cmpint(fm_tuner_scan(&t, NULL, NULL, out, &n), ==, -EPERM);
+	chip.fail_errno = EIO;
+	g_assert_cmpint(fm_tuner_scan(&t, NULL, NULL, out, &n), ==, -EIO);
 	g_assert_cmpint(chip.probes, ==, 0);
+}
+
+/* The MT6631 has no search mode: scan with soft-mute tunes alone. */
+static void test_scan_without_search_mode(void)
+{
+	struct fm_tuner t;
+	struct fm_station out[FM_BAND_CHANNELS];
+	size_t n = 99;
+
+	chip_reset();
+	chip.no_search_mode = true;
+	chip_station(91000, -211);
+	chip_station(95000, -179);
+	tuner_up(&t, 100000);
+
+	g_assert_cmpint(fm_tuner_scan(&t, NULL, NULL, out, &n), ==, 0);
+	g_assert_cmpuint(n, ==, 2);
+	g_assert_cmpint(out[0].khz, ==, 91000);
+	g_assert_cmpint(out[1].khz, ==, 95000);
+	g_assert_cmpint(chip.probes, ==, FM_BAND_CHANNELS);
+	/* No search mode entered, so none to leave. */
+	g_assert_cmpint(chip.calls[FM_NR_RESTORE_SEARCH], ==, 0);
+	g_assert_cmpint(chip.freq, ==, 10000);
 }
 
 static void test_seek_up_lands_on_the_peak(void)
@@ -591,6 +626,21 @@ static void test_seek_skips_the_station_it_is_on(void)
 	 * the seek must not stop there. */
 	g_assert_cmpint(fm_tuner_seek(&t, 1, NULL, NULL), ==, 0);
 	g_assert_cmpint(t.khz, ==, 98000);
+}
+
+static void test_seek_without_search_mode(void)
+{
+	struct fm_tuner t;
+
+	chip_reset();
+	chip.no_search_mode = true;
+	chip_station(95000, -179);
+	tuner_up(&t, 91000);
+
+	g_assert_cmpint(fm_tuner_seek(&t, 1, NULL, NULL), ==, 0);
+	g_assert_cmpint(t.khz, ==, 95000);
+	g_assert_cmpint(chip.freq, ==, 9500);
+	g_assert_cmpint(chip.calls[FM_NR_RESTORE_SEARCH], ==, 0);
 }
 
 static void test_seek_finds_nothing(void)
@@ -896,9 +946,11 @@ int main(int argc, char **argv)
 	g_test_add_func("/tuner/scan-cancelled", test_scan_cancelled);
 	g_test_add_func("/tuner/scan-needs-power", test_scan_needs_power);
 	g_test_add_func("/tuner/scan-pre-search-fails", test_scan_pre_search_fails);
+	g_test_add_func("/tuner/scan-without-search-mode", test_scan_without_search_mode);
 	g_test_add_func("/tuner/seek-up-lands-on-the-peak", test_seek_up_lands_on_the_peak);
 	g_test_add_func("/tuner/seek-down-and-wrap", test_seek_down_and_wrap);
 	g_test_add_func("/tuner/seek-skips-the-station-it-is-on", test_seek_skips_the_station_it_is_on);
+	g_test_add_func("/tuner/seek-without-search-mode", test_seek_without_search_mode);
 	g_test_add_func("/tuner/seek-finds-nothing", test_seek_finds_nothing);
 	g_test_add_func("/tuner/seek-cancelled-goes-home", test_seek_cancelled_goes_home);
 

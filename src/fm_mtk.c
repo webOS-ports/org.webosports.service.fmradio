@@ -200,21 +200,29 @@ static int probe(struct fm_tuner *t, int khz, bool *valid, int *strength)
 
 /*
  * PRE_SEARCH mutes the receiver and sets its search thresholds; RESTORE_SEARCH
- * undoes that. Both only fail on a receiver that is down, which is checked
- * before, so their results are only passed on, not acted on.
+ * undoes that. Not every chip has them: the MT6631 (Unihertz Titan Pocket)
+ * answers both with EPERM while powered up and tuned, and its soft-mute tunes
+ * work all the same - so EPERM, on a receiver already checked to be up, is a
+ * chip without a search mode and the search goes on without one. *searching
+ * says whether RESTORE_SEARCH is owed at the end.
  */
-static int search_begin(struct fm_tuner *t)
+static int search_begin(struct fm_tuner *t, bool *searching)
 {
 	int32_t unused = 0;
+	int ret = call(t, FM_NR_PRE_SEARCH, &unused);
 
-	return call(t, FM_NR_PRE_SEARCH, &unused);
+	*searching = ret == 0;
+	return ret == -EPERM ? 0 : ret;
 }
 
-static void search_end(struct fm_tuner *t, int back_to)
+static void search_end(struct fm_tuner *t, int back_to, bool searching)
 {
 	int32_t unused = 0;
 
-	(void)call(t, FM_NR_RESTORE_SEARCH, &unused);
+	if (searching)
+	{
+		(void)call(t, FM_NR_RESTORE_SEARCH, &unused);
+	}
 	/* A soft-mute tune leaves the receiver on the channel it probed. */
 	(void)mtk_tune(t, back_to);
 }
@@ -224,9 +232,10 @@ static int mtk_scan(struct fm_tuner *t, fm_cancel_fn cancelled, void *data,
 {
 	int home = t->khz;
 	size_t found = 0;
+	bool searching;
 	int ret;
 
-	ret = search_begin(t);
+	ret = search_begin(t, &searching);
 
 	if (ret < 0)
 	{
@@ -255,7 +264,7 @@ static int mtk_scan(struct fm_tuner *t, fm_cancel_fn cancelled, void *data,
 		found++;
 	}
 
-	search_end(t, home);
+	search_end(t, home, searching);
 
 	if (ret < 0)
 	{
@@ -273,9 +282,10 @@ static int mtk_seek(struct fm_tuner *t, int dir, fm_cancel_fn cancelled, void *d
 	int found = 0;
 	int found_strength = 0;
 	bool leaving = false;
+	bool searching;
 	int ret;
 
-	ret = search_begin(t);
+	ret = search_begin(t, &searching);
 
 	if (ret < 0)
 	{
@@ -359,7 +369,7 @@ static int mtk_seek(struct fm_tuner *t, int dir, fm_cancel_fn cancelled, void *d
 		ret = -ENOENT;
 	}
 
-	search_end(t, found ? found : home);
+	search_end(t, found ? found : home, searching);
 	return ret;
 }
 
